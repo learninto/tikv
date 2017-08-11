@@ -193,7 +193,7 @@ impl<T: PdClient> Runner<T> {
         let mut available = if store_info.capacity > stats.used_size {
             store_info.capacity - stats.used_size
         } else {
-            warn!("{} no available space", store_info.tag);
+            warn!("no available space");
             0
         };
 
@@ -203,14 +203,10 @@ impl<T: PdClient> Runner<T> {
             available = disk_stats.free_space();
         }
 
-        stats.set_store_id(self.store_id);
         stats.set_available(available);
 
         STORE_SIZE_GAUGE_VEC.with_label_values(&["capacity"]).set(capacity as f64);
         STORE_SIZE_GAUGE_VEC.with_label_values(&["available"]).set(available as f64);
-
-        stats.set_start_time(store_info.start_time.sec as u32);
-        stats.set_is_busy(store_info.is_busy);
 
         let f = self.pd_client
             .store_heartbeat(stats)
