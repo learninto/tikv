@@ -20,12 +20,10 @@ use std::collections::Bound::{Included, Excluded, Unbounded};
 use std::time::{Duration, Instant};
 use std::thread;
 use std::u64;
-
 use rocksdb::{DB, DBStatisticsTickerType as TickerType, WriteBatch};
 use rocksdb::rocksdb_options::WriteOptions;
 use mio::{self, EventLoop, EventLoopConfig, Sender};
 use protobuf;
-use fs2;
 use time::{self, Timespec};
 
 use kvproto::raft_serverpb::{RaftMessage, RaftSnapshotData, RaftTruncatedState, RegionLocalState,
@@ -63,9 +61,9 @@ use super::msg::{Callback, BatchCallback};
 use super::cmd_resp::{bind_term, new_error};
 use super::transport::Transport;
 use super::metrics::*;
-use super::engine_metrics::*;
 use super::local_metrics::RaftMetrics;
 use prometheus::local::LocalHistogram;
+use super::engine_metrics::*;
 
 type Key = Vec<u8>;
 
@@ -98,6 +96,14 @@ impl Default for StoreStat {
     }
 }
 
+pub struct StoreInfo {
+    pub engine: Arc<DB>,
+    pub capacity: u64,
+    pub tag: String,
+    pub start_time: Timespec,
+    pub is_busy: bool,
+}
+
 pub struct Store<T, C: 'static> {
     cfg: Rc<Config>,
     engine: Arc<DB>,
@@ -120,7 +126,6 @@ pub struct Store<T, C: 'static> {
     compact_worker: Worker<CompactTask>,
     pd_worker: FutureWorker<PdTask>,
     consistency_check_worker: Worker<ConsistencyCheckTask>,
-
     pub apply_worker: Worker<ApplyTask>,
     apply_res_receiver: Option<StdReceiver<ApplyTaskRes>>,
 
@@ -1641,54 +1646,15 @@ impl<T: Transport, C: PdClient> Store<T, C> {
 
     fn store_heartbeat_pd(&mut self) {
         let mut stats = StoreStats::new();
-        let disk_stats = match fs2::statvfs(self.engine.path()) {
-            Err(e) => {
-                error!("{} get disk stat for rocksdb {} failed: {}",
-                       self.tag,
-                       self.engine.path(),
-                       e);
-                return;
-            }
-            Ok(stats) => stats,
-        };
 
-        let disk_cap = disk_stats.total_space();
-        let capacity = if self.cfg.capacity == 0 || disk_cap < self.cfg.capacity {
-            disk_cap
-        } else {
-            self.cfg.capacity
-        };
-        stats.set_capacity(capacity);
-
-        let mut used_size = flush_engine_properties_and_get_used_size(self.engine.clone());
-        used_size += self.snap_mgr.get_total_snap_size();
-
+        let used_size = self.snap_mgr.get_total_snap_size();
         stats.set_used_size(used_size);
 
-        let mut available = if capacity > used_size {
-            capacity - used_size
-        } else {
-            warn!("{} no available space", self.tag);
-            0
-        };
-
-        // We only care rocksdb SST file size, so we should
-        // check disk available here.
-        if available > disk_stats.free_space() {
-            available = disk_stats.free_space();
-        }
-
-        stats.set_store_id(self.store_id());
-        stats.set_available(available);
         stats.set_region_count(self.region_peers.len() as u32);
 
         let snap_stats = self.snap_mgr.stats();
         stats.set_sending_snap_count(snap_stats.sending_count as u32);
         stats.set_receiving_snap_count(snap_stats.receiving_count as u32);
-
-        STORE_SIZE_GAUGE_VEC.with_label_values(&["capacity"]).set(capacity as f64);
-        STORE_SIZE_GAUGE_VEC.with_label_values(&["available"]).set(available as f64);
-
         STORE_SNAPSHOT_TRAFFIC_GAUGE_VEC.with_label_values(&["sending"])
             .set(snap_stats.sending_count as f64);
         STORE_SNAPSHOT_TRAFFIC_GAUGE_VEC.with_label_values(&["receiving"])
@@ -1705,8 +1671,6 @@ impl<T: Transport, C: PdClient> Store<T, C> {
         STORE_SNAPSHOT_TRAFFIC_GAUGE_VEC.with_label_values(&["applying"])
             .set(apply_snapshot_count as f64);
 
-        stats.set_start_time(self.start_time.sec as u32);
-
         // report store write flow to pd
         let engine_total_bytes_written = self.engine
             .get_statistics_ticker_count(TickerType::BytesWritten);
@@ -1720,10 +1684,20 @@ impl<T: Transport, C: PdClient> Store<T, C> {
         self.store_stat.engine_total_keys_written = engine_total_keys_written;
         stats.set_keys_written(delta);
 
-        stats.set_is_busy(self.is_busy);
-        self.is_busy = false;
+        let store_info = StoreInfo {
+            engine: self.engine.clone(),
+            capacity: self.cfg.capacity,
+            tag: self.tag.clone(),
+            start_time: self.start_time,
+            is_busy: self.is_busy,
+        };
 
-        if let Err(e) = self.pd_worker.schedule(PdTask::StoreHeartbeat { stats: stats }) {
+        let task = PdTask::StoreHeartbeat {
+            stats: stats,
+            store_info: store_info,
+        };
+        self.is_busy = false;
+        if let Err(e) = self.pd_worker.schedule(task) {
             error!("{} failed to notify pd: {}", self.tag, e);
         }
     }
