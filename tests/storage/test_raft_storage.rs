@@ -15,8 +15,8 @@ use std::sync::mpsc::channel;
 use std::time::Duration;
 
 use tikv::util::HandyRwLock;
-use tikv::storage::{self, Storage, Mutation, make_key, ALL_CFS, Options, Engine};
-use tikv::storage::{txn, engine, mvcc};
+use tikv::storage::{self, make_key, Engine, Mutation, Options, Storage, ALL_CFS};
+use tikv::storage::{engine, mvcc, txn};
 use tikv::storage::config::Config;
 use kvproto::kvrpcpb::Context;
 use raftstore::server::new_server_cluster_with_cfs;
@@ -36,21 +36,32 @@ fn test_raft_storage() {
     let (_cluster, storage, mut ctx) = new_raft_storage();
     let key = make_key(b"key");
     assert_eq!(storage.get(ctx.clone(), &key, 5).unwrap(), None);
-    storage.prewrite(ctx.clone(),
-                  vec![Mutation::Put((key.clone(), b"value".to_vec()))],
-                  b"key".to_vec(),
-                  10)
+    storage
+        .prewrite(
+            ctx.clone(),
+            vec![Mutation::Put((key.clone(), b"value".to_vec()))],
+            b"key".to_vec(),
+            10,
+        )
         .unwrap();
-    storage.commit(ctx.clone(), vec![key.clone()], 10, 15).unwrap();
-    assert_eq!(storage.get(ctx.clone(), &key, 20).unwrap().unwrap(),
-               b"value".to_vec());
+    storage
+        .commit(ctx.clone(), vec![key.clone()], 10, 15)
+        .unwrap();
+    assert_eq!(
+        storage.get(ctx.clone(), &key, 20).unwrap().unwrap(),
+        b"value".to_vec()
+    );
 
     // Test wrong region id.
     let region_id = ctx.get_region_id();
     ctx.set_region_id(region_id + 1);
     assert!(storage.get(ctx.clone(), &key, 20).is_err());
     assert!(storage.batch_get(ctx.clone(), &[key.clone()], 20).is_err());
-    assert!(storage.scan(ctx.clone(), key.clone(), 1, false, 20).is_err());
+    assert!(
+        storage
+            .scan(ctx.clone(), key.clone(), 1, false, 20)
+            .is_err()
+    );
     assert!(storage.scan_lock(ctx.clone(), 20).is_err());
 }
 
@@ -59,10 +70,12 @@ fn test_raft_storage_rollback_before_prewrite() {
     let (_cluster, storage, ctx) = new_raft_storage();
     let ret = storage.rollback(ctx.clone(), vec![make_key(b"key")], 10);
     assert!(ret.is_ok());
-    let ret = storage.prewrite(ctx.clone(),
-                               vec![Mutation::Put((make_key(b"key"), b"value".to_vec()))],
-                               b"key".to_vec(),
-                               10);
+    let ret = storage.prewrite(
+        ctx.clone(),
+        vec![Mutation::Put((make_key(b"key"), b"value".to_vec()))],
+        b"key".to_vec(),
+        10,
+    );
     assert!(ret.is_err());
     let err = ret.unwrap_err();
     match err {
@@ -79,14 +92,21 @@ fn test_raft_storage_store_not_match() {
 
     let key = make_key(b"key");
     assert_eq!(storage.get(ctx.clone(), &key, 5).unwrap(), None);
-    storage.prewrite(ctx.clone(),
-                  vec![Mutation::Put((key.clone(), b"value".to_vec()))],
-                  b"key".to_vec(),
-                  10)
+    storage
+        .prewrite(
+            ctx.clone(),
+            vec![Mutation::Put((key.clone(), b"value".to_vec()))],
+            b"key".to_vec(),
+            10,
+        )
         .unwrap();
-    storage.commit(ctx.clone(), vec![key.clone()], 10, 15).unwrap();
-    assert_eq!(storage.get(ctx.clone(), &key, 20).unwrap().unwrap(),
-               b"value".to_vec());
+    storage
+        .commit(ctx.clone(), vec![key.clone()], 10, 15)
+        .unwrap();
+    assert_eq!(
+        storage.get(ctx.clone(), &key, 20).unwrap().unwrap(),
+        b"value".to_vec()
+    );
 
     // Test store not match.
     let mut peer = ctx.get_peer().clone();
@@ -96,15 +116,19 @@ fn test_raft_storage_store_not_match() {
     ctx.set_peer(peer);
     assert!(storage.get(ctx.clone(), &key, 20).is_err());
     let res = storage.get(ctx.clone(), &key, 20);
-    if let storage::Error::Txn(txn::Error::Engine(engine::Error::Request(ref e))) = *res.as_ref()
-        .err()
-        .unwrap() {
+    if let storage::Error::Txn(txn::Error::Engine(engine::Error::Request(ref e))) =
+        *res.as_ref().err().unwrap()
+    {
         assert!(e.has_store_not_match());
     } else {
         panic!("expect store_not_match, but got {:?}", res);
     }
     assert!(storage.batch_get(ctx.clone(), &[key.clone()], 20).is_err());
-    assert!(storage.scan(ctx.clone(), key.clone(), 1, false, 20).is_err());
+    assert!(
+        storage
+            .scan(ctx.clone(), key.clone(), 1, false, 20)
+            .is_err()
+    );
     assert!(storage.scan_lock(ctx.clone(), 20).is_err());
 }
 
@@ -119,7 +143,8 @@ fn test_engine_leader_change_twice() {
     cluster.must_transfer_leader(region.get_id(), peers[0].clone());
     let engine = cluster.sim.rl().storages[&peers[0].get_id()].clone();
 
-    let term = cluster.request(b"", vec![new_get_cmd(b"")], true, Duration::from_secs(5))
+    let term = cluster
+        .request(b"", vec![new_get_cmd(b"")], true, Duration::from_secs(5))
         .get_header()
         .get_current_term();
 

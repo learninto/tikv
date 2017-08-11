@@ -11,13 +11,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::time::{SystemTime, Duration};
-use std::thread::{self, JoinHandle, Builder};
+use std::time::{Duration, SystemTime};
+use std::thread::{self, Builder, JoinHandle};
 use std::sync::mpsc::{self, Sender};
 use std::ops::{Add, Sub};
 use std::cmp::Ordering;
 
-use time::{Timespec, Duration as TimeDuration};
+use time::{Duration as TimeDuration, Timespec};
 
 /// Convert Duration to milliseconds.
 #[inline]
@@ -94,25 +94,26 @@ pub struct Monitor {
 
 impl Monitor {
     pub fn new<D, N>(on_jumped: D, now: N) -> Monitor
-        where D: Fn() + Send + 'static,
-              N: Fn() -> SystemTime + Send + 'static
+    where
+        D: Fn() + Send + 'static,
+        N: Fn() -> SystemTime + Send + 'static,
     {
         let (tx, rx) = mpsc::channel();
         let h = Builder::new()
             .name(thd_name!("time-monitor-worker"))
-            .spawn(move || {
-                while let Err(_) = rx.try_recv() {
-                    let before = now();
-                    thread::sleep(Duration::from_millis(DEFAULT_WAIT_MS));
+            .spawn(move || while let Err(_) = rx.try_recv() {
+                let before = now();
+                thread::sleep(Duration::from_millis(DEFAULT_WAIT_MS));
 
-                    let after = now();
-                    if let Err(e) = after.duration_since(before) {
-                        error!("system time jumped back, {:?} -> {:?}, err {:?}",
-                               before,
-                               after,
-                               e);
-                        on_jumped()
-                    }
+                let after = now();
+                if let Err(e) = after.duration_since(before) {
+                    error!(
+                        "system time jumped back, {:?} -> {:?}, err {:?}",
+                        before,
+                        after,
+                        e
+                    );
+                    on_jumped()
                 }
             })
             .unwrap();
@@ -152,12 +153,16 @@ impl Drop for Monitor {
 #[inline]
 fn elapsed_duration(later: Timespec, earlier: Timespec) -> Duration {
     if later >= earlier {
-        Duration::new((later.sec - earlier.sec) as u64,
-                      (later.nsec - earlier.nsec) as u32)
+        Duration::new(
+            (later.sec - earlier.sec) as u64,
+            (later.nsec - earlier.nsec) as u32,
+        )
     } else {
-        panic!("system time jumped back, {:.9} -> {:.9}",
-               earlier.sec as f64 + earlier.nsec as f64 / NANOSECONDS_PER_SECOND as f64,
-               later.sec as f64 + later.nsec as f64 / NANOSECONDS_PER_SECOND as f64);
+        panic!(
+            "system time jumped back, {:.9} -> {:.9}",
+            earlier.sec as f64 + earlier.nsec as f64 / NANOSECONDS_PER_SECOND as f64,
+            later.sec as f64 + later.nsec as f64 / NANOSECONDS_PER_SECOND as f64
+        );
     }
 }
 
@@ -218,8 +223,10 @@ mod inner {
         };
         let errno = unsafe { libc::clock_gettime(clock, &mut t) };
         if errno != 0 {
-            panic!("failed to get monotonic raw locktime, err {}",
-                   io::Error::last_os_error());
+            panic!(
+                "failed to get monotonic raw locktime, err {}",
+                io::Error::last_os_error()
+            );
         }
         Timespec::new(t.tv_sec, t.tv_nsec as _)
     }
@@ -264,8 +271,7 @@ impl Instant {
 
     fn get_timespec(&self) -> Timespec {
         match *self {
-            Instant::Monotonic(t) |
-            Instant::MonotonicCoarse(t) => t,
+            Instant::Monotonic(t) | Instant::MonotonicCoarse(t) => t,
         }
     }
 }
@@ -324,7 +330,7 @@ impl Sub<Instant> for Instant {
 
 #[cfg(test)]
 mod tests {
-    use std::time::{SystemTime, Duration};
+    use std::time::{Duration, SystemTime};
     use std::thread;
     use std::ops::Sub;
     use std::f64;
@@ -337,19 +343,15 @@ mod tests {
     fn test_time_monitor() {
         let jumped = Arc::new(AtomicBool::new(false));
         let triggered = AtomicBool::new(false);
-        let now = move || {
-            if !triggered.load(Ordering::SeqCst) {
-                triggered.store(true, Ordering::SeqCst);
-                SystemTime::now()
-            } else {
-                SystemTime::now().sub(Duration::from_secs(2))
-            }
+        let now = move || if !triggered.load(Ordering::SeqCst) {
+            triggered.store(true, Ordering::SeqCst);
+            SystemTime::now()
+        } else {
+            SystemTime::now().sub(Duration::from_secs(2))
         };
 
         let jumped2 = jumped.clone();
-        let on_jumped = move || {
-            jumped2.store(true, Ordering::SeqCst);
-        };
+        let on_jumped = move || { jumped2.store(true, Ordering::SeqCst); };
 
         let _m = Monitor::new(on_jumped, now);
         thread::sleep(Duration::from_secs(1));
@@ -379,10 +381,12 @@ mod tests {
         ];
         for (early_time, late_time) in pairs {
             // The monotonic clocktime must be strictly monotonic increasing.
-            assert!(late_time >= early_time,
-                    "expect late time {:?} >= early time {:?}",
-                    late_time,
-                    early_time);
+            assert!(
+                late_time >= early_time,
+                "expect late time {:?} >= early time {:?}",
+                late_time,
+                early_time
+            );
         }
     }
 

@@ -11,7 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use prometheus::{Counter, CounterVec, Gauge, HistogramVec, exponential_buckets};
+use prometheus::{exponential_buckets, Counter, CounterVec, Gauge, HistogramVec};
 
 lazy_static! {
     pub static ref KV_COMMAND_COUNTER_VEC: CounterVec =
