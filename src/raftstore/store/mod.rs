@@ -1,43 +1,49 @@
-// Copyright 2016 PingCAP, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright 2016 TiKV Project Authors. Licensed under Apache-2.0.
 
-pub mod engine;
-pub mod keys;
-pub mod msg;
-pub mod config;
-pub mod transport;
-pub mod bootstrap;
 pub mod cmd_resp;
+pub mod config;
+pub mod fsm;
+pub use ::keys;
+pub mod msg;
+pub mod transport;
 pub mod util;
 
-mod store;
+mod bootstrap;
+mod local_metrics;
+mod metrics;
 mod peer;
 mod peer_storage;
+mod region_snapshot;
 mod snap;
 mod worker;
-mod metrics;
-mod engine_metrics;
-mod local_metrics;
 
-pub use self::msg::{Msg, Callback, BatchCallback, Tick, SnapshotStatusMsg};
-pub use self::store::{StoreChannel, Store, create_event_loop};
+pub use self::bootstrap::{
+    bootstrap_store, clear_prepare_bootstrap_cluster, clear_prepare_bootstrap_key, initial_region,
+    prepare_bootstrap_cluster,
+};
 pub use self::config::Config;
-pub use self::transport::Transport;
-pub use self::peer::Peer;
-pub use self::bootstrap::{bootstrap_store, prepare_bootstrap, write_prepare_bootstrap,
-                          clear_prepare_bootstrap, clear_prepare_bootstrap_state};
-pub use self::engine::{Peekable, Iterable, Mutable};
-pub use self::peer_storage::{PeerStorage, do_snapshot, SnapState, RAFT_INIT_LOG_TERM,
-                             RAFT_INIT_LOG_INDEX, CacheQueryStats};
-pub use self::snap::{SnapKey, Snapshot, SnapshotDeleter, SnapshotStatistics, ApplyOptions,
-                     SnapEntry, SnapManager, check_abort, copy_snapshot};
+pub use self::fsm::{new_compaction_listener, DestroyPeerJob, RaftRouter, StoreInfo};
+pub use self::msg::{
+    Callback, CasualMessage, PeerMsg, PeerTicks, RaftCommand, ReadCallback, ReadResponse,
+    SignificantMsg, StoreMsg, StoreTick, WriteCallback, WriteResponse,
+};
+pub use self::peer::{
+    Peer, PeerStat, ProposalContext, ReadExecutor, RequestInspector, RequestPolicy,
+};
+pub use self::peer_storage::{
+    clear_meta, do_snapshot, init_apply_state, init_raft_state, maybe_upgrade_from_2_to_3,
+    write_initial_apply_state, write_initial_raft_state, write_peer_state, CacheQueryStats,
+    PeerStorage, SnapState, INIT_EPOCH_CONF_VER, INIT_EPOCH_VER, RAFT_INIT_LOG_INDEX,
+    RAFT_INIT_LOG_TERM,
+};
+pub use self::region_snapshot::{RegionIterator, RegionSnapshot};
+pub use self::snap::{
+    check_abort, copy_snapshot, ApplyOptions, Error as SnapError, SnapEntry, SnapKey, SnapManager,
+    SnapManagerBuilder, Snapshot, SnapshotDeleter, SnapshotStatistics,
+};
+pub use self::transport::{CasualRouter, ProposalRouter, StoreRouter, Transport};
+pub use self::worker::PdTask;
+pub use self::worker::{KeyEntry, LocalReader, RegionTask};
+// Only used in tests
+#[cfg(test)]
+pub use self::worker::{SplitCheckRunner, SplitCheckTask};

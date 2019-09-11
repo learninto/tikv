@@ -1,86 +1,58 @@
-// Copyright 2016 PingCAP, Inc.
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// See the License for the specific language governing permissions and
-// limitations under the License.
+// Copyright 2016 TiKV Project Authors. Licensed under Apache-2.0.
 
-use prometheus::{CounterVec, HistogramVec, Histogram, exponential_buckets};
+use prometheus::{exponential_buckets, Gauge, Histogram, HistogramVec, IntCounter, IntCounterVec};
 
 lazy_static! {
-    pub static ref PD_REQ_COUNTER_VEC: CounterVec =
-        register_counter_vec!(
-            "tikv_raftstore_pd_request_sent_total",
-            "Total number of pd client request sent.",
-            &["type", "status"]
-        ).unwrap();
-
-    pub static ref PD_HEARTBEAT_COUNTER_VEC: CounterVec =
-        register_counter_vec!(
-            "tikv_raftstore_pd_heartbeat_sent_total",
-            "Total number of raftstore pd client heartbeat sent.",
-            &["type"]
-        ).unwrap();
-
-    pub static ref PD_VALIDATE_PEER_COUNTER_VEC: CounterVec =
-        register_counter_vec!(
-            "tikv_raftstore_pd_validate_peer_total",
-            "Total number of raftstore pd worker validate peer task.",
-            &["type"]
-        ).unwrap();
-
-    pub static ref SNAP_COUNTER_VEC: CounterVec =
-        register_counter_vec!(
-            "tikv_raftstore_snapshot_total",
-            "Total number of raftstore snapshot processed.",
-            &["type", "status"]
-        ).unwrap();
-
-    pub static ref CHECK_SPILT_COUNTER_VEC: CounterVec =
-        register_counter_vec!(
-            "tikv_raftstore_check_split_total",
-            "Total number of raftstore split check.",
-            &["type"]
-        ).unwrap();
-
-    pub static ref SNAP_HISTOGRAM: HistogramVec =
-        register_histogram_vec!(
-            "tikv_raftstore_snapshot_duration_seconds",
-            "Bucketed histogram of raftstore snapshot process duration",
-            &["type"],
-            exponential_buckets(0.0005, 2.0, 20).unwrap()
-        ).unwrap();
-
-    pub static ref CHECK_SPILT_HISTOGRAM: Histogram =
-        register_histogram!(
-            "tikv_raftstore_check_split_duration_seconds",
-            "Bucketed histogram of raftstore split check duration",
-            exponential_buckets(0.0005, 2.0, 20).unwrap()
-        ).unwrap();
-
-    pub static ref COMPACT_RANGE_CF: HistogramVec =
-        register_histogram_vec!(
-            "tikv_compact_range_cf_duration_seconds",
-            "Bucketed histogram of compact range for cf execution",
-            &["cf"]
-        ).unwrap();
-
-    pub static ref REGION_HASH_HISTOGRAM: Histogram =
-        register_histogram!(
-            "tikv_raftstore_hash_duration_seconds",
-            "Bucketed histogram of raftstore hash compution duration"
-        ).unwrap();
-
-    pub static ref APPLY_PROPOSAL: Histogram =
-        register_histogram!(
-            "tikv_raftstore_apply_proposal",
-            "Proposal count of all regions in a mio tick",
-            exponential_buckets(1.0, 2.0, 20).unwrap()
-        ).unwrap();
+    pub static ref SNAP_COUNTER_VEC: IntCounterVec = register_int_counter_vec!(
+        "tikv_raftstore_snapshot_total",
+        "Total number of raftstore snapshot processed.",
+        &["type", "status"]
+    )
+    .unwrap();
+    pub static ref CHECK_SPILT_COUNTER_VEC: IntCounterVec = register_int_counter_vec!(
+        "tikv_raftstore_check_split_total",
+        "Total number of raftstore split check.",
+        &["type"]
+    )
+    .unwrap();
+    pub static ref SNAP_HISTOGRAM: HistogramVec = register_histogram_vec!(
+        "tikv_raftstore_snapshot_duration_seconds",
+        "Bucketed histogram of raftstore snapshot process duration",
+        &["type"],
+        exponential_buckets(0.0005, 2.0, 20).unwrap()
+    )
+    .unwrap();
+    pub static ref CHECK_SPILT_HISTOGRAM: Histogram = register_histogram!(
+        "tikv_raftstore_check_split_duration_seconds",
+        "Bucketed histogram of raftstore split check duration",
+        exponential_buckets(0.0005, 2.0, 20).unwrap()
+    )
+    .unwrap();
+    pub static ref COMPACT_RANGE_CF: HistogramVec = register_histogram_vec!(
+        "tikv_compact_range_cf_duration_seconds",
+        "Bucketed histogram of compact range for cf execution",
+        &["cf"]
+    )
+    .unwrap();
+    pub static ref REGION_HASH_HISTOGRAM: Histogram = register_histogram!(
+        "tikv_raftstore_hash_duration_seconds",
+        "Bucketed histogram of raftstore hash computation duration"
+    )
+    .unwrap();
+    pub static ref STALE_PEER_PENDING_DELETE_RANGE_GAUGE: Gauge = register_gauge!(
+        "tikv_pending_delete_ranges_of_stale_peer",
+        "Total number of tikv pending delete range of stale peer"
+    )
+    .unwrap();
+    pub static ref LOCAL_READ_REJECT: IntCounterVec = register_int_counter_vec!(
+        "tikv_raftstore_local_read_reject_total",
+        "Total number of rejections from the local reader.",
+        &["reason"]
+    )
+    .unwrap();
+    pub static ref LOCAL_READ_EXECUTED_REQUESTS: IntCounter = register_int_counter!(
+        "tikv_raftstore_local_read_executed_requests",
+        "Total number of requests directly executed by local reader."
+    )
+    .unwrap();
 }
